@@ -1,0 +1,147 @@
+#define BLYNK_TEMPLATE_ID "TMPL3ToopsM3Z"
+#define BLYNK_TEMPLATE_NAME "rescuebot"
+#define BLYNK_AUTH_TOKEN "ogTQcidRFwkUC_tEbhHvkHdH3OEtWKga"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <Adafruit_MLX90614.h>
+#include <TinyGPS++.h>
+
+const char* ssid = "Your_SSID";      // Replace with your WiFi SSID
+const char* password = "Your_Password";  // Replace with your WiFi Password
+
+// Motor Pins
+const int motor1A = 21, motor1B = 19, enA = 26;
+const int motor2A = 22, motor2B = 23, enB = 32;
+
+// PWM Channels for ESP32
+#define PWM_FREQ 1000
+#define PWM_RESOLUTION 8
+#define PWM_CHANNEL_A 0
+#define PWM_CHANNEL_B 1
+
+// Ultrasonic Sensor Pins
+#define TRIG_PIN 12
+#define ECHO_PIN 14
+
+// GPS & Thermal Sensor
+#define GPS_BAUDRATE 9600
+Adafruit_MLX90614 mlx = Adafruit_MLX90614();
+TinyGPSPlus gps;
+
+void setup() {
+    Serial.begin(115200);
+    
+    // WiFi Connection
+    WiFi.begin(ssid, password);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWiFi Connected!");
+
+    // Blynk Initialization
+    Blynk.begin(BLYNK_AUTH_TOKEN, ssid, password);
+
+    // Initialize Pins
+    pinMode(motor1A, OUTPUT);
+    pinMode(motor1B, OUTPUT);
+    pinMode(motor2A, OUTPUT);
+    pinMode(motor2B, OUTPUT);
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+
+    // Initialize PWM for Motors
+    ledcSetup(PWM_CHANNEL_A, PWM_FREQ, PWM_RESOLUTION);
+    ledcSetup(PWM_CHANNEL_B, PWM_FREQ, PWM_RESOLUTION);
+    ledcAttachPin(enA, PWM_CHANNEL_A);
+    ledcAttachPin(enB, PWM_CHANNEL_B);
+
+    // Initialize Sensors
+    mlx.begin();
+    Serial2.begin(GPS_BAUDRATE);
+}
+
+void loop() {
+    Blynk.run();
+
+    // Ultrasonic Sensor for Distance Measurement
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+
+    long duration = pulseIn(ECHO_PIN, HIGH);
+    float distance = duration / 58.2;
+    Blynk.virtualWrite(V7, distance);
+
+    // Thermal Sensor Data
+    float ambientTemp = mlx.readAmbientTempC();
+    float objectTemp = mlx.readObjectTempC();
+    Blynk.virtualWrite(V5, ambientTemp);
+    Blynk.virtualWrite(V0, objectTemp);
+
+    // GPS Data
+    if (Serial2.available() > 0) {
+        if (gps.encode(Serial2.read())) {
+            if (gps.location.isValid()) {
+                Blynk.virtualWrite(V8, gps.location.lat());
+                Blynk.virtualWrite(V9, gps.location.lng());
+            }
+            if (gps.altitude.isValid()) {
+                Blynk.virtualWrite(V10, gps.altitude.meters());
+            }
+            if (gps.speed.isValid()) {
+                Blynk.virtualWrite(V11, gps.speed.kmph());
+            }
+        }
+    }
+    delay(100);
+}
+
+// Motor Control Functions
+void moveForward() {
+    ledcWrite(PWM_CHANNEL_A, 255);
+    ledcWrite(PWM_CHANNEL_B, 255);
+    digitalWrite(motor1A, HIGH);
+    digitalWrite(motor1B, LOW);
+    digitalWrite(motor2A, HIGH);
+    digitalWrite(motor2B, LOW);
+}
+
+void moveBackward() {
+    ledcWrite(PWM_CHANNEL_A, 255);
+    ledcWrite(PWM_CHANNEL_B, 255);
+    digitalWrite(motor1A, LOW);
+    digitalWrite(motor1B, HIGH);
+    digitalWrite(motor2A, LOW);
+    digitalWrite(motor2B, HIGH);
+}
+
+void turnLeft() {
+    ledcWrite(PWM_CHANNEL_A, 255);
+    digitalWrite(motor1A, HIGH);
+    digitalWrite(motor1B, LOW);
+    ledcWrite(PWM_CHANNEL_B, 255);
+    digitalWrite(motor2A, LOW);
+    digitalWrite(motor2B, HIGH);
+}
+
+void turnRight() {
+    ledcWrite(PWM_CHANNEL_A, 255);
+    digitalWrite(motor1A, LOW);
+    digitalWrite(motor1B, HIGH);
+    ledcWrite(PWM_CHANNEL_B, 255);
+    digitalWrite(motor2A, HIGH);
+    digitalWrite(motor2B, LOW);
+}
+
+void stopMotors() {
+    ledcWrite(PWM_CHANNEL_A, 0);
+    ledcWrite(PWM_CHANNEL_B, 0);
+    digitalWrite(motor1A, LOW);
+    digitalWrite(motor1B, LOW);
+    digitalWrite(motor2A, LOW);
+    digitalWrite(motor2B, LOW);
+}
